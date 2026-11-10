@@ -39,6 +39,7 @@ class TestBatteryMonitor(unittest.TestCase):
         monitor = BatteryMonitor()
 
         monitor.update(battery(79, "Charging"))
+
         self.assertEqual(
             monitor.update(battery(80, "Charging")),
             "charging"
@@ -92,16 +93,80 @@ class TestBatteryMonitor(unittest.TestCase):
         monitor = BatteryMonitor()
 
         monitor.update(battery(79, "Charging"))
+
         self.assertEqual(
             monitor.update(battery(80, "Charging")),
             "charging"
         )
 
-        monitor.update(battery(78, "Charging"))
+        # Histeresis de 3 puntos: bajar al 77%.
+        monitor.update(battery(77, "Charging"))
 
         self.assertEqual(
             monitor.update(battery(82, "Charging")),
             "charging"
+        )
+
+
+class TestBatteryHysteresis(unittest.TestCase):
+
+    def test_charging_fluctuation(self):
+        monitor = BatteryMonitor(hysteresis=3)
+
+        monitor.update(battery(79, "Charging"))
+
+        self.assertEqual(
+            monitor.update(battery(80, "Charging")),
+            "charging"
+        )
+
+        # Oscilaciones que no deben generar mas alertas.
+        for value in [79, 80, 79, 81, 78, 80]:
+            self.assertIsNone(
+                monitor.update(battery(value, "Charging"))
+            )
+
+    def test_charging_rearm(self):
+        monitor = BatteryMonitor(hysteresis=3)
+
+        monitor.update(battery(79, "Charging"))
+
+        self.assertEqual(
+            monitor.update(battery(80, "Charging")),
+            "charging"
+        )
+
+        # El margen de rearme es 80 - 3 = 77.
+        monitor.update(battery(77, "Charging"))
+
+        self.assertEqual(
+            monitor.update(battery(80, "Charging")),
+            "charging"
+        )
+
+    def test_low_battery_rearm(self):
+        monitor = BatteryMonitor(hysteresis=3)
+
+        monitor.update(battery(21, "Discharging"))
+
+        self.assertEqual(
+            monitor.update(battery(20, "Discharging")),
+            "low_battery"
+        )
+
+        # Una oscilacion pequena no debe repetir el aviso.
+        monitor.update(battery(21, "Discharging"))
+
+        self.assertIsNone(
+            monitor.update(battery(20, "Discharging"))
+        )
+
+        # El margen de rearme es 20 + 3 = 23.
+        monitor.update(battery(23, "Discharging"))
+
+        self.assertEqual(
+            monitor.update(battery(20, "Discharging")),
+            "low_battery"
         )
 
 

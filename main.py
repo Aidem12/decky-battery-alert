@@ -1,57 +1,75 @@
-import os
 
-# The decky plugin module is located at decky-loader/plugin
-# For easy intellisense checkout the decky-loader code repo
-# and add the `decky-loader/plugin/imports` path to `python.analysis.extraPaths` in `.vscode/settings.json`
-import decky
 import asyncio
+import contextlib
+
+import decky
+
+from backend.service import BatteryService
+
+
+CHECK_INTERVAL = 15
+
 
 class Plugin:
-    # A normal method. It can be called from the TypeScript side using @decky/api.
-    async def add(self, left: int, right: int) -> int:
-        return left + right
 
-    async def long_running(self):
-        await asyncio.sleep(15)
-        # Passing through a bunch of random data, just as an example
-        await decky.emit("timer_event", "Hello from the backend!", True, 2)
+    async def _battery_loop(self):
+        """Continuously monitor battery state."""
+        decky.logger.info("Battery monitoring started")
 
-    # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
+        while True:
+            try:
+                result = self.service.check()
+                battery = result["battery"]
+                event = result["event"]
+
+                if event is not None and battery is not None:
+                    capacity = battery["capacity"]
+
+                    decky.logger.info(
+                        f"Battery alert: {event} at {capacity}%"
+                    )
+
+                    await decky.emit(
+                        "battery_alert",
+                        event,
+                        capacity,
+                    )
+
+            except asyncio.CancelledError:
+                raise
+
+            except Exception:
+                decky.logger.exception(
+                    "Error while monitoring battery"
+                )
+
+            await asyncio.sleep(CHECK_INTERVAL)
+
     async def _main(self):
-        self.loop = asyncio.get_event_loop()
-        decky.logger.info("Hello World!")
+        """Start battery monitoring."""
+        self.service = BatteryService()
 
-    # Function called first during the unload process, utilize this to handle your plugin being stopped, but not
-    # completely removed
+        self.monitor_task = asyncio.create_task(
+            self._battery_loop()
+        )
+
+        decky.logger.info("Decky Battery Alert loaded")
+
     async def _unload(self):
-        decky.logger.info("Goodnight World!")
-        pass
+        """Stop battery monitoring."""
+        task = getattr(self, "monitor_task", None)
 
-    # Function called after `_unload` during uninstall, utilize this to clean up processes and other remnants of your
-    # plugin that may remain on the system
+        if task is not None:
+            task.cancel()
+
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+            self.monitor_task = None
+
+        decky.logger.info("Decky Battery Alert unloaded")
+
     async def _uninstall(self):
-        decky.logger.info("Goodbye World!")
-        pass
-
-    async def start_timer(self):
-        self.loop.create_task(self.long_running())
-
-    # Migrations that should be performed before entering `_main()`.
-    async def _migration(self):
-        decky.logger.info("Migrating")
-        # Here's a migration example for logs:
-        # - `~/.config/decky-template/template.log` will be migrated to `decky.decky_LOG_DIR/template.log`
-        decky.migrate_logs(os.path.join(decky.DECKY_USER_HOME,
-                                               ".config", "decky-template", "template.log"))
-        # Here's a migration example for settings:
-        # - `~/homebrew/settings/template.json` is migrated to `decky.decky_SETTINGS_DIR/template.json`
-        # - `~/.config/decky-template/` all files and directories under this root are migrated to `decky.decky_SETTINGS_DIR/`
-        decky.migrate_settings(
-            os.path.join(decky.DECKY_HOME, "settings", "template.json"),
-            os.path.join(decky.DECKY_USER_HOME, ".config", "decky-template"))
-        # Here's a migration example for runtime data:
-        # - `~/homebrew/template/` all files and directories under this root are migrated to `decky.decky_RUNTIME_DIR/`
-        # - `~/.local/share/decky-template/` all files and directories under this root are migrated to `decky.decky_RUNTIME_DIR/`
-        decky.migrate_runtime(
-            os.path.join(decky.DECKY_HOME, "template"),
-            os.path.join(decky.DECKY_USER_HOME, ".local", "share", "decky-template"))
+        decky.logger.info(
+            "Decky Battery Alert uninstalled"
+        )
