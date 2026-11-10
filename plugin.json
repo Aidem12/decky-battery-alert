@@ -1,0 +1,13 @@
+{
+  "name": "Decky Battery Alert",
+  "author": "Aidem12",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": [
+      "battery",
+      "notifications"
+    ],
+    "description": "Configurable battery notifications for Steam Deck."
+  }
+}
